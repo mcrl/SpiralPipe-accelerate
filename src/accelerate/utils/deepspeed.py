@@ -59,6 +59,8 @@ class HfDeepSpeedConfig:
         self.config = config
 
         self.set_stage_and_offload()
+        if self._stage == -1: # pp and zero are mutually exclusive
+            self.set_pp_stage_and_offload()
 
     def set_stage_and_offload(self):
         # zero stage - this is done as early as possible, before model is created, to allow
@@ -78,6 +80,20 @@ class HfDeepSpeedConfig:
             )
             if len(offload_devices & offload_devices_valid) > 0:
                 self._offload = True
+    
+    def set_pp_stage_and_offload(self):
+        self._pp_stage = self.get_value("pp_optimization.stage", -1)
+
+        self._offload = False
+        offload_devices_valid = set(["cpu", "nvme"])
+        offload_devices = set(
+            [
+                self.get_value("pp_optimization.offload_optimizer.device"),
+                self.get_value("pp_optimization.offload_param.device"),
+            ]
+        )
+        if len(offload_devices & offload_devices_valid) > 0:
+            self._offload = True
 
     def find_config_node(self, ds_key_long):
         config = self.config
@@ -141,6 +157,18 @@ class HfDeepSpeedConfig:
         value = self.get_value(ds_key_long)
         return False if value is None else not bool(value)
 
+    def is_pp(self):
+        return self._pp_stage == "naive" or self._pp_stage == "mobius" or self._pp_stage == "spiral"
+    
+    def is_naive_pp(self):
+        return self._pp_stage == "naive"
+
+    def is_mobius(self):
+        return self._pp_stage == "mobius"
+    
+    def is_spiral(self):
+        return self._pp_stage == "spiral"
+    
     def is_zero2(self):
         return self._stage == 2
 

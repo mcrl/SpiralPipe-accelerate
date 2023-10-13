@@ -520,25 +520,29 @@ class DeepSpeedPlugin:
         default=None,
         metadata={"help": "Possible options are 0,1,2,3; Default will be taken from environment variable"},
     )
+    pp_stage: str = field(
+        default=None,
+        metadata={"help": "Possible options are 'naive','mobius','spiral'; Default will be taken from environment variable"},
+    )
     is_train_batch_min: str = field(
         default=True,
         metadata={"help": "If both train & eval dataloaders are specified, this will decide the train_batch_size"},
     )
     offload_optimizer_device: bool = field(
         default=None,
-        metadata={"help": "Possible options are none|cpu|nvme. Only applicable with ZeRO Stages 2 and 3."},
+        metadata={"help": "Possible options are none|cpu|nvme. Only applicable with ZeRO Stages 2 and 3 or PP."},
     )
     offload_param_device: bool = field(
         default=None,
-        metadata={"help": "Possible options are none|cpu|nvme. Only applicable with ZeRO Stage 3."},
+        metadata={"help": "Possible options are none|cpu|nvme. Only applicable with ZeRO Stage 3 or PP."},
     )
     offload_optimizer_nvme_path: str = field(
         default=None,
-        metadata={"help": "Possible options are /nvme|/local_nvme. Only applicable with ZeRO Stage 3."},
+        metadata={"help": "Possible options are /nvme|/local_nvme. Only applicable with ZeRO Stage 3 or PP."},
     )
     offload_param_nvme_path: str = field(
         default=None,
-        metadata={"help": "Possible options are /nvme|/local_nvme. Only applicable with ZeRO Stage 3."},
+        metadata={"help": "Possible options are /nvme|/local_nvme. Only applicable with ZeRO Stage 3 or PP."},
     )
     zero3_init_flag: bool = field(
         default=None,
@@ -565,7 +569,10 @@ class DeepSpeedPlugin:
                 self.gradient_clipping = float(gradient_clipping)
 
         if self.zero_stage is None:
-            self.zero_stage = int(os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE", 2))
+            self.zero_stage = int(os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE", -1))
+
+        if self.pp_stage is None:
+            self.pp_stage = os.environ.get("ACCELERATE_DEEPSPEED_PP_STAGE", "none")
 
         if self.offload_optimizer_device is None:
             self.offload_optimizer_device = os.environ.get("ACCELERATE_DEEPSPEED_OFFLOAD_OPTIMIZER_DEVICE", "none")
@@ -597,21 +604,29 @@ class DeepSpeedPlugin:
                 self.hf_ds_config = HfDeepSpeedConfig(self.hf_ds_config)
             if "gradient_accumulation_steps" not in self.hf_ds_config.config:
                 self.hf_ds_config.config["gradient_accumulation_steps"] = 1
-            if "zero_optimization" not in self.hf_ds_config.config:
-                raise ValueError("Please specify the ZeRO optimization config in the DeepSpeed config.")
 
             self._deepspeed_config_checks()
             plugin_to_config_mapping = {
                 "gradient_accumulation_steps": "gradient_accumulation_steps",
-                "gradient_clipping": "gradient_clipping",
-                "zero_stage": "zero_optimization.stage",
-                "offload_optimizer_device": "zero_optimization.offload_optimizer.device",
-                "offload_param_device": "zero_optimization.offload_param.device",
-                "offload_param_nvme_path": "zero_optimization.offload_param.nvme_path",
-                "offload_optimizer_nvme_path": "zero_optimization.offload_optimizer.nvme_path",
-                "zero3_save_16bit_model": "zero_optimization.stage3_gather_16bit_weights_on_model_save",
+                "gradient_clipping": "gradient_clipping"
             }
+
+            if "zero_optimization" in self.hf_ds_config.config:
+                plugin_to_config_mapping["zero_stage"] = "zero_optimization.stage"
+                plugin_to_config_mapping["offload_optimizer_device"] = "zero_optimization.offload_optimizer.device"
+                plugin_to_config_mapping["offload_param_device"] = "zero_optimization.offload_param.device"
+                plugin_to_config_mapping["offload_param_nvme_path"] = "zero_optimization.offload_param.nvme_path"
+                plugin_to_config_mapping["offload_optimizer_nvme_path"] = "zero_optimization.offload_optimizer.nvme_path"
+                plugin_to_config_mapping["zero3_save_16bit_model"] = "zero_optimization.stage3_gather_16bit_weights_on_model_save"
+            elif "pp_optimization" in self.hf_ds_config.config:
+                plugin_to_config_mapping["pp_stage"] = "pp_optimization.stage"
+                plugin_to_config_mapping["offload_optimizer_device"] = "pp_optimization.offload_optimizer.device"
+                plugin_to_config_mapping["offload_param_device"] = "pp_optimization.offload_param.device"
+                plugin_to_config_mapping["offload_param_nvme_path"] = "pp_optimization.offload_param.nvme_path"
+                plugin_to_config_mapping["offload_optimizer_nvme_path"] = "pp_optimization.offload_optimizer.nvme_path"
+
             kwargs = {v: getattr(self, k) for k, v in plugin_to_config_mapping.items() if getattr(self, k) is not None}
+
             for key in kwargs.keys():
                 self.fill_match(key, **kwargs, must_match=False)
             self.hf_ds_config.set_stage_and_offload()
@@ -627,7 +642,9 @@ class DeepSpeedPlugin:
                 "train_batch_size": "auto",
                 "train_micro_batch_size_per_gpu": "auto",
                 "gradient_accumulation_steps": self.gradient_accumulation_steps,
-                "zero_optimization": {
+            }
+            if self.zero_stage >= 0:
+                config["zero_optimization"] = {
                     "stage": self.zero_stage,
                     "offload_optimizer": {
                         "device": self.offload_optimizer_device,
@@ -640,8 +657,21 @@ class DeepSpeedPlugin:
                         "nvme_path": self.offload_param_nvme_path if self.offload_param_device == "nvme" else None,
                     },
                     "stage3_gather_16bit_weights_on_model_save": self.zero3_save_16bit_model,
-                },
-            }
+                }
+            if self.pp_stage != "none":
+                config["pp_optimization"] = {
+                    "stage": self.pp_stage,
+                    "offload_optimizer": {
+                        "device": self.offload_optimizer_device,
+                        "nvme_path": self.offload_optimizer_nvme_path
+                        if self.offload_optimizer_device == "nvme"
+                        else None,
+                    },
+                    "offload_param": {
+                        "device": self.offload_param_device,
+                        "nvme_path": self.offload_param_nvme_path if self.offload_param_device == "nvme" else None,
+                    },
+                }
             if self.gradient_clipping:
                 config["gradient_clipping"] = self.gradient_clipping
             self.hf_ds_config = HfDeepSpeedConfig(config)
