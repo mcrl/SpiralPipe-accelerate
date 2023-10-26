@@ -524,6 +524,10 @@ class DeepSpeedPlugin:
         default=None,
         metadata={"help": "Possible options are 'naive','mobius','spiral'; Default will be taken from environment variable"},
     )
+    pp_degree: int = field(
+        default=1,
+        metadata={"help": "Pipeline parallel degree. Default is 1"},
+    )
     is_train_batch_min: str = field(
         default=True,
         metadata={"help": "If both train & eval dataloaders are specified, this will decide the train_batch_size"},
@@ -620,6 +624,7 @@ class DeepSpeedPlugin:
                 plugin_to_config_mapping["zero3_save_16bit_model"] = "zero_optimization.stage3_gather_16bit_weights_on_model_save"
             elif "pp_optimization" in self.hf_ds_config.config:
                 plugin_to_config_mapping["pp_stage"] = "pp_optimization.stage"
+                plugin_to_config_mapping["pp_degree"] = "pp_optimization.degree"
                 plugin_to_config_mapping["offload_optimizer_device"] = "pp_optimization.offload_optimizer.device"
                 plugin_to_config_mapping["offload_param_device"] = "pp_optimization.offload_param.device"
                 plugin_to_config_mapping["offload_param_nvme_path"] = "pp_optimization.offload_param.nvme_path"
@@ -661,6 +666,7 @@ class DeepSpeedPlugin:
             if self.pp_stage != "none":
                 config["pp_optimization"] = {
                     "stage": self.pp_stage,
+                    "degree": self.pp_degree,
                     "offload_optimizer": {
                         "device": self.offload_optimizer_device,
                         "nvme_path": self.offload_optimizer_nvme_path
