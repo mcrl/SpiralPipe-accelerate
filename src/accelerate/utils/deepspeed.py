@@ -59,9 +59,9 @@ class HfDeepSpeedConfig:
         self.config = config
 
         self.set_stage_and_offload()
-        if self._stage == -1: # pp and zero are mutually exclusive
-            self.set_pp_stage_and_offload()
-
+        self.set_pp_stage_and_offload()
+        assert self._stage == -1 or self._pp_stage == -1, "ZeRO and PP are mutually exclusive."
+        
     def set_stage_and_offload(self):
         # zero stage - this is done as early as possible, before model is created, to allow
         # ``is_deepspeed_zero3_enabled`` query and getting to the early deepspeed config object
