@@ -1644,20 +1644,32 @@ class Accelerator:
                     if isinstance(scheduler, (DummyScheduler)) and scheduler.lr_scheduler_callable is not None:
                         kwargs["lr_scheduler"] = scheduler.lr_scheduler_callable
                 else:
-                    if self.deepspeed_config["zero_optimization"].get("offload_optimizer", {}).get(
-                        "device", "none"
-                    ) != "none" and self.deepspeed_config.get("zero_force_ds_cpu_optimizer", True):
-                        from deepspeed.ops.adam import DeepSpeedCPUAdam
+                    if "zero_optimization" in self.deepspeed_config.keys():
+                        if self.deepspeed_config["zero_optimization"].get("offload_optimizer", {}).get(
+                            "device", "none"
+                        ) != "none" and self.deepspeed_config.get("zero_force_ds_cpu_optimizer", True):
+                            from deepspeed.ops.adam import DeepSpeedCPUAdam
 
-                        defaults = {k: v for k, v in optimizer.defaults.items() if k in ["lr", "weight_decay"]}
-                        optimizer = DeepSpeedCPUAdam(optimizer.param_groups, **defaults)
+                            defaults = {k: v for k, v in optimizer.defaults.items() if k in ["lr", "weight_decay"]}
+                            optimizer = DeepSpeedCPUAdam(optimizer.param_groups, **defaults)
+
+                    elif "pp_optimization" in self.deepspeed_config.keys():
+                        if self.deepspeed_config["pp_optimization"].get("offload_optimizer", {}).get(
+                            "device", "none"
+                        ) != "none":
+                            from deepspeed.ops.adam import DeepSpeedCPUAdam
+
+                            defaults = {k: v for k, v in optimizer.defaults.items() if k in ["lr", "weight_decay"]}
+                            optimizer = DeepSpeedCPUAdam(optimizer.param_groups, **defaults)
+                        
                     kwargs["optimizer"] = optimizer
                     if scheduler is not None:
                         if (
                             isinstance(scheduler, LRScheduler)
                             or type(scheduler).__name__ in deepspeed.runtime.lr_schedules.VALID_LR_SCHEDULES
                         ):
-                            kwargs["lr_scheduler"] = scheduler
+                            kwargs["lr_scheduler"] = scheduler                        
+                    
 
             engine, optimizer, _, lr_scheduler = deepspeed.initialize(**kwargs)
             if optimizer is not None:

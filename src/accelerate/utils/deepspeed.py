@@ -61,7 +61,7 @@ class HfDeepSpeedConfig:
         self.set_stage_and_offload()
         self.set_pp_stage_and_offload()
         assert self._stage == -1 or self._pp_stage == -1, "ZeRO and PP are mutually exclusive."
-        
+
     def set_stage_and_offload(self):
         # zero stage - this is done as early as possible, before model is created, to allow
         # ``is_deepspeed_zero3_enabled`` query and getting to the early deepspeed config object
@@ -80,7 +80,7 @@ class HfDeepSpeedConfig:
             )
             if len(offload_devices & offload_devices_valid) > 0:
                 self._offload = True
-    
+
     def set_pp_stage_and_offload(self):
         self._pp_stage = self.get_value("pp_optimization.stage", -1)
 
@@ -158,17 +158,17 @@ class HfDeepSpeedConfig:
         return False if value is None else not bool(value)
 
     def is_pp(self):
-        return self._pp_stage == "naive" or self._pp_stage == "mobius" or self._pp_stage == "spiral"
-    
+        return self._pp_stage >= 0
+
     def is_naive_pp(self):
-        return self._pp_stage == "naive"
+        return self._pp_stage == 0
 
     def is_mobius(self):
-        return self._pp_stage == "mobius"
-    
+        return self._pp_stage == 1
+
     def is_spiral(self):
-        return self._pp_stage == "spiral"
-    
+        return self._pp_stage == 2
+
     def is_zero2(self):
         return self._stage == 2
 
