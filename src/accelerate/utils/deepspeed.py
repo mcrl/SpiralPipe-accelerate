@@ -157,17 +157,17 @@ class HfDeepSpeedConfig:
         value = self.get_value(ds_key_long)
         return False if value is None else not bool(value)
 
-    def is_pp(self):
-        return self._pp_stage >= 0
-
+    def is_pp_opt(self):
+        return self._pp_stage > 0
+    
     def is_naive_pp(self):
-        return self._pp_stage == 0
-
-    def is_mobius(self):
         return self._pp_stage == 1
 
-    def is_spiral(self):
+    def is_mobius(self):
         return self._pp_stage == 2
+
+    def is_spiral(self):
+        return self._pp_stage == 3
 
     def is_zero2(self):
         return self._stage == 2
